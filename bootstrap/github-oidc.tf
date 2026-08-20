@@ -76,7 +76,7 @@ resource "aws_iam_role" "github_actions_terraform" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
 
-            "token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:ref:refs/heads/main"
+            "token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:*"
 
             #"token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:ref:refs/heads/main"
           }
