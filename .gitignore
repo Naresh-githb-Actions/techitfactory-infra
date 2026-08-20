@@ -25,3 +25,13 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
