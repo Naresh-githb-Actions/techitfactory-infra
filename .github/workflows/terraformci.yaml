@@ -33,6 +33,14 @@ jobs:
           echo "Workflow: $GITHUB_WORKFLOW"
           echo "Actor: $GITHUB_ACTOR"
  
+      - name: Verify AWS Role ARN Configuration
+        env:
+            ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          echo "Role ARN is configured: $([ -n "$ROLE_ARN" ] && echo yes || echo no)"
+          echo "Account: $(echo "$ROLE_ARN" | cut -d: -f5)"
+          echo "Role: $(echo "$ROLE_ARN" | sed 's#^arn:aws:iam::[0-9]*:role/##')'"
+
       # OIDC temporarily disabled for diagnostics
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
