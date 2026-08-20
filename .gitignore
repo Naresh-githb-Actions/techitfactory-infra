@@ -30,8 +30,3 @@ Thumbs.db
 **/.terraform/
 *.tfstate
 *.tfstate.*
-
-# Terraform
-**/.terraform/
-*.tfstate
-*.tfstate.*

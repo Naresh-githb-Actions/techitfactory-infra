@@ -17,15 +17,29 @@ jobs:
     name: Terraform Plan
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: bootstrap
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+      - name: Show GitHub OIDC Context
+        run: |
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Ref: $GITHUB_REF"
+          echo "Event: $GITHUB_EVENT_NAME"
+          echo "Workflow: $GITHUB_WORKFLOW"
+          echo "Actor: $GITHUB_ACTOR"
+ 
+      # OIDC temporarily disabled for diagnostics
+      # - name: Configure AWS Credentials (OIDC)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      #     aws-region: ${{ env.AWS_REGION }}
+      #     audience: sts.amazonaws.com
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -33,69 +47,17 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive bootstrap
+        id: fmt
+        run: terraform fmt -check -recursive
 
       - name: Terraform Init
-        run: |
-          cd bootstrap
-          terraform init
+        id: init
+        run: terraform init
 
       - name: Terraform Validate
-        run: |
-          cd bootstrap
-          terraform validate
+        id: validate
+        run: terraform validate
 
       - name: Terraform Plan
-        run: |
-          cd bootstrap
-          terraform plan -no-color -out=tfplan
-
-#name: Terraform Ci
-#
-#on:
-#  push:
-#    branches:
-#      - main
-#
-#permissions:
-#  id-token: write
-#  contents: read
-#
-#env:
-#  AWS_REGION: ap-south-1
-#  TF_VERSION: "1.6.0"
-#
-#jobs:
-#  terraform-plan:
-#    name: Terraform Plan
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - name: Checkout
-#        uses: actions/checkout@v4
-#
-#      - name: Setup Terraform
-#        uses: hashicorp/setup-terraform@v3
-#        with:
-#          terraform_version: ${{ env.TF_VERSION }}
-#
-#      - name: Configure AWS credentials with OIDC
-#        uses: aws-actions/configure-aws-credentials@v4
-#        with:
-#          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-#          aws-region: ${{ env.AWS_REGION }}
-#
-#      - name: Verify AWS identity
-#        run: aws sts get-caller-identity
-#
-#      - name: Terraform Init
-#        run: terraform init
-#
-#      - name: Terraform Format Check
-#        run: terraform fmt -check -recursive
-#
-#      - name: Terraform Validate
-#        run: terraform validate
-#
-#      - name: Terraform Plan
-#        run: terraform plan -input=false
+        id: plan
+        run: terraform plan -no-color -out=tfplan
