@@ -6,45 +6,32 @@
 # This file configures GitHub Actions to authenticate with AWS using OIDC
 # (OpenID Connect) instead of static access keys.
 #
-# WHY OIDC?
-# - No static AWS keys stored in GitHub Secrets = more secure
-# - Short-lived credentials = reduced risk if compromised
-# - AWS CloudTrail shows which GitHub repo/workflow assumed the role
-#
 # HOW IT WORKS:
 # 1. GitHub Actions requests a JWT token from GitHub's OIDC provider
-# 2. The token contains claims about the repo, branch, workflow, etc.
-# 3. AWS STS validates the token and issues temporary credentials
-# 4. Terraform uses these credentials (valid for ~1 hour)
+# 2. AWS STS validates the token
+# 3. AWS assumes the IAM role
+# 4. Terraform uses temporary AWS credentials
 #
-# RESOURCES CREATED:
-# - aws_iam_openid_connect_provider: Trust relationship with GitHub
-# - aws_iam_role: Role that GitHub Actions assumes
-# - aws_iam_role_policy: Permissions for Terraform operations
-#
-# NOTE: The TLS provider is defined in main.tf's required_providers block
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # GITHUB OIDC PROVIDER
 # -----------------------------------------------------------------------------
-# Fetches GitHub's OIDC provider certificate for validation
-# AWS uses this thumbprint to verify tokens are from GitHub
 
 data "tls_certificate" "github" {
   url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
 }
 
-# Creates the OIDC identity provider in AWS IAM
-# This establishes trust between AWS and GitHub's identity service
 resource "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 
-  # The audience claim - GitHub Actions always uses this value
-  client_id_list = ["sts.amazonaws.com"]
+  client_id_list = [
+    "sts.amazonaws.com"
+  ]
 
-  # Certificate thumbprint for token validation
-  thumbprint_list = [data.tls_certificate.github.certificates[0].sha1_fingerprint]
+  thumbprint_list = [
+    data.tls_certificate.github.certificates[0].sha1_fingerprint
+  ]
 
   tags = {
     Name = "github-actions-oidc"
@@ -54,36 +41,42 @@ resource "aws_iam_openid_connect_provider" "github" {
 # =============================================================================
 # IAM ROLE FOR GITHUB ACTIONS
 # =============================================================================
-# This role is assumed by GitHub Actions workflows
-# The trust policy restricts which repos can assume this role
 
 resource "aws_iam_role" "github_actions_terraform" {
   name = "${var.project_name}-github-terraform"
 
+  # ---------------------------------------------------------------------------
   # TRUST POLICY
-  # Defines WHO can assume this role (GitHub Actions from specific repos)
+  # ---------------------------------------------------------------------------
+  # Only GitHub Actions from:
+  #
+  # Repository:
+  # Naresh-github-Actions/techitfactory-infra
+  #
+  # Branch:
+  # main
+  #
+  # can assume this role.
+  # ---------------------------------------------------------------------------
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
+
     Statement = [
       {
         Effect = "Allow"
+
         Principal = {
           Federated = aws_iam_openid_connect_provider.github.arn
         }
+
         Action = "sts:AssumeRoleWithWebIdentity"
+
         Condition = {
-          # Verify the token is for AWS
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          # SECURITY: Restrict to specific repos only!
-          # The :* at the end allows any branch/ref
-          StringLike = {
-            "token.actions.githubusercontent.com:sub" = [
-              "repo:Naresh-github-Actions/techitfactory-infra:*",
-              "repo:Naresh-github-Actions/techitfactory-app:*",
-              "repo:Naresh-github-Actions/techitfactory-gitops:*"
-            ]
+
+            "token.actions.githubusercontent.com:sub" = "repo:Naresh-github-Actions/techitfactory-infra:ref:refs/heads/main"
           }
         }
       }
@@ -98,96 +91,112 @@ resource "aws_iam_role" "github_actions_terraform" {
 # =============================================================================
 # IAM POLICY FOR TERRAFORM OPERATIONS
 # =============================================================================
-# Defines WHAT the role can do (permissions for Terraform)
 
 resource "aws_iam_role_policy" "github_actions_terraform" {
   name = "terraform-permissions"
+
   role = aws_iam_role.github_actions_terraform.id
 
   policy = jsonencode({
     Version = "2012-10-17"
+
     Statement = [
-      # -----------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
       # TERRAFORM STATE ACCESS
-      # -----------------------------------------------------------------
-      # Allows reading/writing state to S3 bucket
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "TerraformStateAccess"
         Effect = "Allow"
+
         Action = [
           "s3:GetObject",
           "s3:PutObject",
           "s3:DeleteObject",
           "s3:ListBucket"
         ]
+
         Resource = [
           aws_s3_bucket.terraform_state.arn,
           "${aws_s3_bucket.terraform_state.arn}/*"
         ]
       },
-      # -----------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
       # TERRAFORM STATE LOCKING
-      # -----------------------------------------------------------------
-      # Allows acquiring/releasing locks in DynamoDB
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "TerraformLockAccess"
         Effect = "Allow"
+
         Action = [
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:DeleteItem"
         ]
+
         Resource = aws_dynamodb_table.terraform_lock.arn
       },
-      # -----------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
       # KMS ACCESS
-      # -----------------------------------------------------------------
-      # Allows encrypting/decrypting state with KMS key
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "KMSAccess"
         Effect = "Allow"
+
         Action = [
           "kms:Decrypt",
           "kms:Encrypt",
           "kms:GenerateDataKey"
         ]
+
         Resource = aws_kms_key.terraform_state.arn
       },
-      # -----------------------------------------------------------------
-      # EC2/VPC PERMISSIONS
-      # -----------------------------------------------------------------
-      # Full access to EC2/VPC resources for infrastructure management
-      # In production, you'd scope this down to specific resources
+
+      # -----------------------------------------------------------------------
+      # EC2 / VPC PERMISSIONS
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "EC2VPCFullAccess"
         Effect = "Allow"
+
         Action = [
           "ec2:*",
           "elasticloadbalancing:*"
         ]
+
         Resource = "*"
       },
-      # -----------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
       # EKS PERMISSIONS
-      # -----------------------------------------------------------------
-      # Full access to EKS for cluster management
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "EKSFullAccess"
         Effect = "Allow"
+
         Action = [
           "eks:*",
           "iam:CreateServiceLinkedRole"
         ]
+
         Resource = "*"
       },
-      # -----------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
       # IAM PERMISSIONS
-      # -----------------------------------------------------------------
-      # Needed to create roles for EKS, IRSA, etc.
-      # Be careful with IAM permissions - they're powerful!
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "IAMManagement"
         Effect = "Allow"
+
         Action = [
           "iam:CreateRole",
           "iam:DeleteRole",
@@ -209,19 +218,18 @@ resource "aws_iam_role_policy" "github_actions_terraform" {
           "iam:UntagRole",
           "iam:ListInstanceProfilesForRole"
         ]
+
         Resource = "*"
       },
-      # -----------------------------------------------------------------
-      # ECR PERMISSIONS
-      # -----------------------------------------------------------------
-      # Required by:
-      #   - CI workflow (ci.yml): docker build + push to ECR
-      #   - release.yml: docker build + push release tags
-      #   - Trivy scan: pull image from ECR for scanning
-      #   - Terraform: create/delete/configure ECR repositories
+
+      # -----------------------------------------------------------------------
+      # ECR REPOSITORY MANAGEMENT
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "ECRRepositoryManagement"
         Effect = "Allow"
+
         Action = [
           "ecr:CreateRepository",
           "ecr:DeleteRepository",
@@ -235,19 +243,33 @@ resource "aws_iam_role_policy" "github_actions_terraform" {
           "ecr:TagResource",
           "ecr:UntagResource"
         ]
+
         Resource = "*"
       },
+
+      # -----------------------------------------------------------------------
+      # ECR AUTHENTICATION
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "ECRImagePush"
         Effect = "Allow"
+
         Action = [
           "ecr:GetAuthorizationToken"
         ]
+
         Resource = "*"
       },
+
+      # -----------------------------------------------------------------------
+      # ECR IMAGE OPERATIONS
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "ECRImageOperations"
         Effect = "Allow"
+
         Action = [
           "ecr:BatchCheckLayerAvailability",
           "ecr:InitiateLayerUpload",
@@ -259,19 +281,23 @@ resource "aws_iam_role_policy" "github_actions_terraform" {
           "ecr:DescribeImages",
           "ecr:ListImages"
         ]
+
         Resource = "arn:aws:ecr:ap-south-1:208384285485:repository/techitfactory-infra/*"
       },
-      # -----------------------------------------------------------------
-      # ROUTE53 & ACM PERMISSIONS
-      # -----------------------------------------------------------------
-      # For DNS and TLS certificate management
+
+      # -----------------------------------------------------------------------
+      # ROUTE53 / ACM
+      # -----------------------------------------------------------------------
+
       {
         Sid    = "Route53Access"
         Effect = "Allow"
+
         Action = [
           "route53:*",
           "acm:*"
         ]
+
         Resource = "*"
       }
     ]
@@ -281,14 +307,15 @@ resource "aws_iam_role_policy" "github_actions_terraform" {
 # =============================================================================
 # OUTPUTS
 # =============================================================================
-# The role ARN is needed for GitHub Actions workflow configuration
 
 output "github_actions_role_arn" {
-  description = "ARN of IAM role for GitHub Actions - add this to GitHub Secrets as AWS_ROLE_ARN"
-  value       = aws_iam_role.github_actions_terraform.arn
+  description = "IAM role ARN for GitHub Actions. Add this to GitHub Secrets as AWS_ROLE_ARN."
+
+  value = aws_iam_role.github_actions_terraform.arn
 }
 
 output "oidc_provider_arn" {
-  description = "ARN of the GitHub OIDC provider"
-  value       = aws_iam_openid_connect_provider.github.arn
+  description = "ARN of the GitHub OIDC provider."
+
+  value = aws_iam_openid_connect_provider.github.arn
 }
