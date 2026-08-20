@@ -57,7 +57,7 @@ resource "aws_iam_role" "github_actions_terraform" {
   # main
   #
   # can assume this role.
-  # ----------------------------------------------------------------------------
+  # -----------------------------------------------------------------------------
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -75,10 +75,18 @@ resource "aws_iam_role" "github_actions_terraform" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-
+          }
+        
+          StringLike = {
             "token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:*"
 
-            #"token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:ref:refs/heads/main"
+        #Condition = {
+        #  StringEquals = {
+        #    "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+#
+        #    "token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:*"
+#
+        #    #"token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:ref:refs/heads/main"
           }
         }
       }
