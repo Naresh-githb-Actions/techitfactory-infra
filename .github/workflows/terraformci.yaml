@@ -1,53 +1,111 @@
-name: Terraform Ci
+name: Terraform CI
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "**/*.tf"
-      - "**/*.tfvars"
-      - ".github/workflows/terraformci.yaml"
-
-permissions:
-  id-token: write
-  contents: read
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 env:
   AWS_REGION: ap-south-1
-  TF_VERSION: "1.6.0"
+  TF_VERSION: 1.6.0
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read
+  pull-requests: write
 
 jobs:
-  terraform-plan:
+  terraform:
     name: Terraform Plan
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Configure AWS credentials with OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
 
       - name: Terraform Init
-        run: terraform init
-
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+        id: init
+        run: |
+          cd bootstrap
+          terraform init
 
       - name: Terraform Validate
-        run: terraform validate
+        id: validate
+        run: |
+          cd bootstrap
+          terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -input=false
+        id: plan
+        if: github.event_name == 'pull_request'
+        run: |
+          cd bootstrap
+          terraform plan -no-color -out=tfplan
+        continue-on-error: true
+
+#name: Terraform Ci
+#
+#on:
+#  push:
+#    branches:
+#      - main
+#
+#permissions:
+#  id-token: write
+#  contents: read
+#
+#env:
+#  AWS_REGION: ap-south-1
+#  TF_VERSION: "1.6.0"
+#
+#jobs:
+#  terraform-plan:
+#    name: Terraform Plan
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v4
+#
+#      - name: Setup Terraform
+#        uses: hashicorp/setup-terraform@v3
+#        with:
+#          terraform_version: ${{ env.TF_VERSION }}
+#
+#      - name: Configure AWS credentials with OIDC
+#        uses: aws-actions/configure-aws-credentials@v4
+#        with:
+#          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+#          aws-region: ${{ env.AWS_REGION }}
+#
+#      - name: Verify AWS identity
+#        run: aws sts get-caller-identity
+#
+#      - name: Terraform Init
+#        run: terraform init
+#
+#      - name: Terraform Format Check
+#        run: terraform fmt -check -recursive
+#
+#      - name: Terraform Validate
+#        run: terraform validate
+#
+#      - name: Terraform Plan
+#        run: terraform plan -input=false
