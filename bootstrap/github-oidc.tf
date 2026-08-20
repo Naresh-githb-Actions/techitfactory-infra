@@ -57,7 +57,7 @@ resource "aws_iam_role" "github_actions_terraform" {
   # main
   #
   # can assume this role.
-  # ---------------------------------------------------------------------------
+  # ----------------------------------------------------------------------------
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
