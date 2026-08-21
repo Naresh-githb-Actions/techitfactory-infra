@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Debug OIDCToken
+        uses: github/actions-oidc-debugger@main
 
       - name: Show GitHub OIDC Context
         run: |
