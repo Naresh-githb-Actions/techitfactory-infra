@@ -78,7 +78,8 @@ resource "aws_iam_role" "github_actions_terraform" {
           }
 
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:*"
+            "token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions@292717025/techitfactory-infra@1339321434:*"
+            #"token.actions.githubusercontent.com:sub" = "repo:Naresh-githb-Actions/techitfactory-infra:*"
 
             #Condition = {
             #  StringEquals = {
